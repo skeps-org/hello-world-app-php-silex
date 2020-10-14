@@ -5,7 +5,6 @@ require_once __DIR__ . '/vendor/autoload.php';
 use Bigcommerce\Api\Client as Bigcommerce;
 use Firebase\JWT\JWT;
 use Guzzle\Http\Client;
-use Handlebars\Handlebars;
 use Silex\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -31,11 +30,11 @@ $app->get('/load', function (Request $request) use ($app) {
 		$user = $data['user'];
 		$redis->set($key, json_encode($user, true));
 	}
-	return 'Welcome ' . json_encode($user, true);
+	return file_get_contents(__DIR__ . '/dist/index.html');
 });
 
-$app->get('/auth/callback', function (Request $request) use ($app) {
-	$redis = new Credis_Client('localhost');
+$app->get('/auth', function (Request $request) use ($app) {
+	$redis = new Credis_Client('127.0.0.1');
 
 	$payload = array(
 		'client_id' => clientId(),
@@ -61,16 +60,131 @@ $app->get('/auth/callback', function (Request $request) use ($app) {
 		// Store the user data and auth data in our key-value store so we can fetch it later and make requests.
 		$redis->set($key, json_encode($data['user'], true));
 		$redis->set("stores/{$storeHash}/auth", json_encode($data));
-
+		// try {
+		// 	$result = createWebhook($storeHash, clientId(), $data['access_token']);
+		// 	// var_dump($result);
+		// } catch (\Throwable $th) {
+		// 	// var_dump($th);
+		// }
 		return 'Hello ' . json_encode($data);
 	} else {
 		return 'Something went wrong... [' . $resp->getStatusCode() . '] ' . $resp->getBody();
 	}
-
 });
 
+$app->post('/webhooks', function (Request $request) use ($app) {
+	$data = json_decode($request->getContent(), true);
+	$storeHash = 'oswqulg515';
+	$authToken = getAuthToken($storeHash);
+	$clientId = clientId();
+	$orderId = $data['data']['id'];
+	$curl = curl_init();
+	curl_setopt_array($curl, array(
+		CURLOPT_URL => "https://api.bigcommerce.com/stores/${storeHash}/v3/payments/access_tokens",
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_ENCODING => "",
+		CURLOPT_MAXREDIRS => 10,
+		CURLOPT_TIMEOUT => 30,
+		CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+		CURLOPT_CUSTOMREQUEST => "POST",
+		CURLOPT_POSTFIELDS => "{\"order\":{\"id\":" . $orderId . "}}",
+		CURLOPT_HTTPHEADER => array(
+			"accept: application/json",
+			"content-type: application/json",
+			"x-auth-client: ${clientId}",
+			"x-auth-token: ${authToken}"
+		),
+	));
+	curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
+	curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0);
+
+	$response = curl_exec($curl);
+	$err = curl_error($curl);
+
+	curl_close($curl);
+
+	if ($err) {
+		echo "cURL Error #:" . $err;
+		return 'not ok';
+	} else {
+		$res = json_decode($response, true);
+		$pat = $res['data']['id'];
+		$curl1 = curl_init();
+
+		curl_setopt_array($curl1, array(
+			CURLOPT_URL => "https://payments.bigcommerce.com/stores/${storeHash}/payments",
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_ENCODING => "",
+			CURLOPT_MAXREDIRS => 10,
+			CURLOPT_TIMEOUT => 30,
+			CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+			CURLOPT_CUSTOMREQUEST => "POST",
+			CURLOPT_POSTFIELDS => "{\"payment\":{\"instrument\":{\"type\":\"card\",\"number\":\"3566002020360505\",\"cardholder_name\":\"John Doe\",\"expiry_month\":12,\"expiry_year\":2022,\"verification_value\":\"888\"},\"payment_method_id\":\"stripe.card\",\"save_instrument\":false}}",
+			CURLOPT_HTTPHEADER => array(
+				"accept: application/vnd.bc.v1+json",
+				"authorization: PAT ${pat}",
+				"content-type: application/json",
+				"x-auth-client: ${clientId}",
+				"x-auth-token: ${authToken}"
+			),
+		));
+		curl_setopt($curl1, CURLOPT_SSL_VERIFYHOST, 0);
+		curl_setopt($curl1, CURLOPT_SSL_VERIFYPEER, 0);
+		try {
+			$response1 = curl_exec($curl1);
+		} catch (\Throwable $th) {
+			echo $th;
+		}
+		$err1 = curl_error($curl1);
+
+		curl_close($curl1);
+
+		if ($err1) {
+			echo "cURL Error #:" . $err1;
+			return 'not ok';
+		} else {
+			$res = json_decode($response1, true);
+			$curl = curl_init();
+
+			curl_setopt_array($curl, array(
+				CURLOPT_URL => "https://api.bigcommerce.com/stores/${storeHash}/v2/orders/${orderId}",
+				CURLOPT_RETURNTRANSFER => true,
+				CURLOPT_ENCODING => "",
+				CURLOPT_MAXREDIRS => 10,
+				CURLOPT_TIMEOUT => 30,
+				CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+				CURLOPT_CUSTOMREQUEST => "PUT",
+				CURLOPT_POSTFIELDS => "{\"status_id\":11, \"payment_method\":\"Skeps Financing\"}",
+				CURLOPT_HTTPHEADER => array(
+					"accept: application/json",
+					"content-type: application/json",
+					"x-auth-client: ${clientId}",
+					"x-auth-token: ${authToken}"
+				),
+			));
+			curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
+			curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0);
+	
+			$response = curl_exec($curl);
+			$err = curl_error($curl);
+
+			curl_close($curl);
+
+			if ($err) {
+				echo "cURL Error #:" . $err;
+			} else {
+				$headers = ['Access-Control-Allow-Origin' => '*'];
+				$response = new Response(json_encode($response), 200, $headers);
+				return $response;
+			}
+		}
+	}
+});
+
+
+
 // Endpoint for removing users in a multi-user setup
-$app->get('/remove-user', function(Request $request) use ($app) {
+$app->get('/remove-user', function (Request $request) use ($app) {
 	$data = verifySignedRequest($request->get('signed_payload'));
 	if (empty($data)) {
 		return 'Invalid signed_payload.';
@@ -79,88 +193,8 @@ $app->get('/remove-user', function(Request $request) use ($app) {
 	$key = getUserKey($data['store_hash'], $data['user']['email']);
 	$redis = new Credis_Client('localhost');
 	$redis->del($key);
-	return '[Remove User] '.$data['user']['email'];
+	return '[Remove User] ' . $data['user']['email'];
 });
-
-/**
- * GET /storefront/{storeHash}/customers/{jwtToken}/recently_purchased.html
- * Fetches the "Recently Purchased Products" HTML block and displays it in the frontend.
- */
-$app->get('/storefront/{storeHash}/customers/{jwtToken}/recently_purchased.html', function ($storeHash, $jwtToken) use ($app) {
-	$headers = ['Access-Control-Allow-Origin' => '*'];
-	try {
-		// First let's get the customer's ID from the token and confirm that they're who they say they are.
-		$customerId = getCustomerIdFromToken($jwtToken);
-
-		// Next let's initialize the BigCommerce API for the store requested so we can pull data from it.
-		configureBCApi($storeHash);
-
-		// Generate the recently purchased products HTML
-		$recentlyPurchasedProductsHtml = getRecentlyPurchasedProductsHtml($storeHash, $customerId);
-
-		// Now respond with the generated HTML
-		$response = new Response($recentlyPurchasedProductsHtml, 200, $headers);
-	} catch (Exception $e) {
-		error_log("Error occurred while trying to get recently purchased items: {$e->getMessage()}");
-		$response = new Response("", 500, $headers); // Empty string here to make sure we don't display any errors in the storefront.
-	}
-
-	return $response;
-});
-
-/**
- * Gets the HTML block that displays the recently purchased products for a store.
- * @param string $storeHash
- * @param string $customerId
- * @return string HTML content to display in the storefront
- */
-function getRecentlyPurchasedProductsHtml($storeHash, $customerId)
-{
-	$redis = new Credis_Client('localhost');
-	$cacheKey = "stores/{$storeHash}/customers/{$customerId}/recently_purchased_products.html";
-	$cacheLifetime = 60 * 5; // Set a 5 minute cache lifetime for this HTML block.
-
-	// First let's see if we can find he HTML block in the cache so we don't have to reach out to BigCommerce's servers.
-	$cachedContent = json_decode($redis->get($cacheKey));
-	if (!empty($cachedContent) && (int)$cachedContent->expiresAt > time()) { // Ensure the cache has not expired as well.
-		return $cachedContent->content;
-	}
-
-	// Whelp looks like we couldn't find the HTML block in the cache, so we'll have to compile it ourselves.
-	// First let's get all the customer's recently purchased products.
-	$products = getRecentlyPurchasedProducts($customerId);
-
-	// Render the template with the recently purchased products fetched from the BigCommerce server.
-	$htmlContent =  (new Handlebars())->render(
-		file_get_contents('templates/recently_purchased.html'),
-		['products' => $products]
-	);
-	$htmlContent = str_ireplace('http', 'https', $htmlContent); // Ensures we have HTTPS links, which for some reason we don't always get.
-
-	// Save the HTML content in the cache so we don't have to reach out to BigCommece's server too often.
-	$redis->set($cacheKey, json_encode([ 'content' => $htmlContent, 'expiresAt' => time() + $cacheLifetime]));
-
-	return $htmlContent;
-}
-
-/**
- * Look at each of the customer's orders, and each of their order products and then pull down each product resource
- * that was purchased.
- * @param string $customerId ID of the customer that we want to retrieve the recently purchased products list for.
- * @return array<Bigcommerce\Resources\Product> An array of products from the BigCommerce API
- */
-function getRecentlyPurchasedProducts($customerId)
-{
-	$products = [];
-
-	foreach(Bigcommerce::getOrders(['customer_id' => $customerId]) as $order) {
-		foreach (Bigcommerce::getOrderProducts($order->id) as $orderProduct) {
-			array_push($products, Bigcommerce::getProduct($orderProduct->product_id));
-		}
-	}
-
-	return $products;
-}
 
 /**
  * Configure the static BigCommerce API client with the authorized app's auth token, the client ID from the environment
@@ -259,6 +293,39 @@ function bcAuthService()
 function getUserKey($storeHash, $email)
 {
 	return "kitty.php:$storeHash:$email";
+}
+
+function createWebhook($storeHash, $clientId, $authToken)
+{
+	$curl = curl_init();
+	curl_setopt_array($curl, array(
+		CURLOPT_URL => "https://api.bigcommerce.com/stores/${storeHash}/v2/hooks",
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_ENCODING => "",
+		CURLOPT_MAXREDIRS => 10,
+		CURLOPT_TIMEOUT => 30,
+		CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+		CURLOPT_CUSTOMREQUEST => "POST",
+		CURLOPT_POSTFIELDS => "{\"scope\":\"store/order/created\",\"destination\":\"https://94ed26cf5897.ngrok.io/bigcommerce/webhooks\",\"headers\":{}}",
+		CURLOPT_HTTPHEADER => array(
+			"accept: application/json",
+			"content-type: application/json",
+			"x-auth-client: ${clientId}",
+			"x-auth-token: ${authToken}"
+		),
+	));
+	curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
+	curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0);
+
+	$response = curl_exec($curl);
+	$err = curl_error($curl);
+
+	curl_close($curl);
+	if ($err) {
+		//   echo "cURL Error #:" . $err;
+	} else {
+		//   echo $response;
+	}
 }
 
 $app->run();
