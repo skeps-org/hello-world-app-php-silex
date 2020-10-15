@@ -78,7 +78,7 @@ $app->post('/webhooks', function (Request $request) use ($app) {
 	$authToken = getAuthToken($storeHash);
 	$clientId = clientId();
 	$orderId = $data['data']['id'];
-	$curl = curl_init();
+/* 	$curl = curl_init();
 	curl_setopt_array($curl, array(
 		CURLOPT_URL => "https://api.bigcommerce.com/stores/${storeHash}/v3/payments/access_tokens",
 		CURLOPT_RETURNTRANSFER => true,
@@ -144,7 +144,7 @@ $app->post('/webhooks', function (Request $request) use ($app) {
 			return 'not ok';
 		} else {
 			$res = json_decode($response1, true);
-			$curl = curl_init();
+ */			$curl = curl_init();
 
 			curl_setopt_array($curl, array(
 				CURLOPT_URL => "https://api.bigcommerce.com/stores/${storeHash}/v2/orders/${orderId}",
@@ -177,8 +177,8 @@ $app->post('/webhooks', function (Request $request) use ($app) {
 				$response = new Response(json_encode($response), 200, $headers);
 				return $response;
 			}
-		}
-	}
+	// 	}
+	// }
 });
 
 

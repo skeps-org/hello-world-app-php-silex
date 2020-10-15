@@ -36,6 +36,9 @@ function getCustomerJWT() {
 
 function executeProductPage() {
     var paymentFactor = 0.0274;
+    if(sessionStorage.getItem('customerJWT')){
+        paymentFactor = 0.0233;
+    }
     var priceContainer = document.querySelector('.productView-price');
     var price = priceContainer.querySelector('[itemprop="priceSpecification"]').querySelector('[itemprop="price"]').getAttribute('content');
     var offerDiv = document.createElement('div');
@@ -48,6 +51,9 @@ function executeProductPage() {
 
 function executeCategoryPage() {
     var paymentFactor = 0.0274;
+    if(sessionStorage.getItem('customerJWT')){
+        paymentFactor = 0.0233;
+    }
     var productContainer = document.querySelector('.productGrid');
     var allProducts = productContainer.querySelectorAll('.product');
     allProducts.forEach(function(productItem) {
@@ -65,6 +71,9 @@ function executeCategoryPage() {
 
 function executeCartPage() {
     var paymentFactor = 0.0274;
+    if(sessionStorage.getItem('customerJWT')){
+        paymentFactor = 0.0233;
+    }
     var priceContainer = document.querySelector('[data-cart-totals]');
     var injectTarget = priceContainer.querySelector('.cart-total-value.cart-total-grandTotal');
     var priceHtml = priceContainer.querySelector('.cart-total-value.cart-total-grandTotal > span').innerHTML;
